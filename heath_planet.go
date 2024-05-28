@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
-	"os"
 
 	"github.com/PuerkitoBio/goquery"
 )
@@ -18,14 +17,6 @@ type HealthPlanet struct {
 	ClientId       string
 	ClientSecret   string
 	Session        *http.Client
-}
-
-func getEnv(key string) string {
-	value := os.Getenv(key)
-	if value == "" {
-		log.Fatalf("Environment variable not found: %s", key)
-	}
-	return value
 }
 
 func createClient() *http.Client {
@@ -46,44 +37,38 @@ func NewHealthPlanet(loginId, loginPassword, clientId, clientSecret string) *Hea
 	}
 }
 
-func (hp *HealthPlanet) getAccessToken() (string, error) {
-	authUrl, err := url.Parse("https://www.healthplanet.jp/oauth/auth.do")
-	if err != nil {
-		log.Fatal(err)
-	}
-	redirectUrl, err := url.Parse("https://www.healthplanet.jp/success.html")
-	if err != nil {
-		log.Fatal(err)
-	}
-	authQuery := authUrl.Query()
-	authQuery.Set("redirect_uri", redirectUrl.String())
+func (hp *HealthPlanet) getOauthToken() (string, error) {
+	authUrl := "https://www.healthplanet.jp/oauth/auth.do"
+	redirectUrl := "https://www.healthplanet.jp/success.html"
+
+	authQuery := url.Values{}
+	authQuery.Set("redirect_uri", redirectUrl)
 	authQuery.Set("response_type", "code")
 	authQuery.Set("client_id", hp.ClientId)
 	authQuery.Set("scope", "innerscan")
-	authUrl.RawQuery = authQuery.Encode()
 
-	loginUrl, err := url.Parse("https://www.healthplanet.jp/login_oauth.do")
-	if err != nil {
-		log.Fatal(err)
-	}
-	loginQuery := loginUrl.Query()
+	authUrlParsed, err := url.Parse(authUrl)
+	authUrlParsed.RawQuery = authQuery.Encode()
+
+	loginUrl := "https://www.healthplanet.jp/login_oauth.do"
+
+	loginQuery := url.Values{}
 	loginQuery.Set("loginId", hp.LoginId)
 	loginQuery.Set("passwd", hp.LoginPasssword)
 	loginQuery.Set("send", "1")
-	loginQuery.Set("url", authUrl.String())
-	loginUrl.RawQuery = loginQuery.Encode()
+	loginQuery.Set("url", authUrlParsed.String())
 
-	fmt.Println(loginUrl.String())
+	loginUrlParsed, err := url.Parse(loginUrl)
+	loginUrlParsed.RawQuery = loginQuery.Encode()
 
-	resp, err := hp.Session.PostForm(loginUrl.String(), nil)
+	resp, err := hp.Session.PostForm(loginUrlParsed.String(), nil)
 	if err != nil {
-		log.Fatal(err)
+		return "", err
 	}
+
 	redirectedUrl, err := url.Parse(resp.Request.URL.String())
-	fmt.Println(redirectedUrl)
-	fmt.Println(redirectedUrl.Path)
 	if err != nil {
-		log.Fatal(err)
+		return "", err
 	}
 
 	if redirectedUrl.Query().Has("error") {
@@ -93,28 +78,13 @@ func (hp *HealthPlanet) getAccessToken() (string, error) {
 			return "", fmt.Errorf("Failed to login due to client")
 		}
 	}
-
+	
 	oauthToken, err := getOauthTokenFromHtmlDoc(resp.Body)
 	if err != nil {
-		log.Fatal(err)
+		return "", err
 	}
 
-	approvalUrl, err := url.Parse("https://www.healthplanet.jp/oauth/approval.do")
-	if err != nil {
-		log.Fatal(err)
-	}
-	approvalQuery := approvalUrl.Query()
-	approvalQuery.Set("oauth_token", oauthToken)
-	approvalQuery.Set("approval", "true")
-	approvalUrl.RawQuery = approvalQuery.Encode()
-
-	resp, err = hp.Session.PostForm(approvalUrl.String(), nil)
-	if err != nil {
-		log.Fatal(err)
-	}
-	redirectedUrl = resp.Request.URL
-	accessToken := redirectedUrl.Query().Get("code")
-	return accessToken, nil
+	return oauthToken, nil
 }
 
 func getOauthTokenFromHtmlDoc(body io.ReadCloser) (string, error) {
@@ -134,9 +104,37 @@ func getOauthTokenFromHtmlDoc(body io.ReadCloser) (string, error) {
 	return oauthToken, nil
 }
 
+func (hp *HealthPlanet) getAccessToken(oauthToken string) (string, error) {
+	approvalUrl, err := url.Parse("https://www.healthplanet.jp/oauth/approval.do")
+	if err != nil {
+		return "", err
+	}
+	approvalQuery := approvalUrl.Query()
+	approvalQuery.Set("oauth_token", oauthToken)
+	approvalQuery.Set("approval", "true")
+	approvalUrl.RawQuery = approvalQuery.Encode()
+
+	resp, err := hp.Session.PostForm(approvalUrl.String(), nil)
+	if err != nil {
+		return "", err
+	}
+
+	redirectedUrl := resp.Request.URL
+	accessToken := redirectedUrl.Query().Get("code")
+	if accessToken == "" {
+		return "", fmt.Errorf("Failed to get access token")
+	}
+
+	return accessToken, nil
+}
 
 func (hp *HealthPlanet) Run() {
-	accessToken, err := hp.getAccessToken()
+	oauthToken, err := hp.getOauthToken()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	accessToken, err := hp.getAccessToken(oauthToken)
 	if err != nil {
 		log.Fatal(err)
 	}
