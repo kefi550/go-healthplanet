@@ -1,6 +1,7 @@
 package healthplanet
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -104,7 +105,7 @@ func getOauthTokenFromHtmlDoc(body io.ReadCloser) (string, error) {
 	return oauthToken, nil
 }
 
-func (hp *HealthPlanet) getAccessToken(oauthToken string) (string, error) {
+func (hp *HealthPlanet) getAuthCode(oauthToken string) (string, error) {
 	approvalUrl, err := url.Parse("https://www.healthplanet.jp/oauth/approval.do")
 	if err != nil {
 		return "", err
@@ -120,11 +121,45 @@ func (hp *HealthPlanet) getAccessToken(oauthToken string) (string, error) {
 	}
 
 	redirectedUrl := resp.Request.URL
-	accessToken := redirectedUrl.Query().Get("code")
-	if accessToken == "" {
+	authCode := redirectedUrl.Query().Get("code")
+	if authCode == "" {
 		return "", fmt.Errorf("Failed to get access token")
 	}
 
+	return authCode, nil
+}
+
+type AccessToken struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+	ExpiresIn    int    `json:"expires_in"`
+}
+
+func (hp *HealthPlanet) getAccessToken(authCode string) (string, error) {
+	accessTokenUrl := "https://www.healthplanet.jp/oauth/token"
+
+	accessTokenQuery := url.Values{}
+	accessTokenQuery.Set("client_id", hp.ClientId)
+	accessTokenQuery.Set("client_secret", hp.ClientSecret)
+	accessTokenQuery.Set("code", authCode)
+	accessTokenQuery.Set("redirect_uri", "https://www.healthplanet.jp/success.html")
+	accessTokenQuery.Set("grant_type", "authorization_code")
+
+	resp, err := hp.Session.PostForm(accessTokenUrl, accessTokenQuery)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	byteArray, _ := io.ReadAll(resp.Body)
+	jsonBytes := []byte(byteArray)
+	data := new(AccessToken)
+
+	if err := json.Unmarshal(jsonBytes, data); err != nil {
+		fmt.Println("JSON Unmarshal error:", err)
+		return "", err
+	}
+	accessToken := data.AccessToken
 	return accessToken, nil
 }
 
@@ -134,10 +169,11 @@ func (hp *HealthPlanet) Run() {
 		log.Fatal(err)
 	}
 
-	accessToken, err := hp.getAccessToken(oauthToken)
+	authCode, err := hp.getAuthCode(oauthToken)
 	if err != nil {
 		log.Fatal(err)
 	}
 
+	accessToken, err := hp.getAccessToken(authCode)
 	fmt.Println(accessToken)
 }
