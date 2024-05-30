@@ -79,7 +79,7 @@ func (hp *HealthPlanet) getOauthToken() (string, error) {
 			return "", fmt.Errorf("Failed to login due to client")
 		}
 	}
-	
+
 	oauthToken, err := getOauthTokenFromHtmlDoc(resp.Body)
 	if err != nil {
 		return "", err
@@ -163,6 +163,43 @@ func (hp *HealthPlanet) getAccessToken(authCode string) (string, error) {
 	return accessToken, nil
 }
 
+type Status struct {
+	BirthDate string `json:"birth_date"`
+	Data 	[]struct {
+		Date string `json:"date"`
+		KeyData string `json:"keydata"`
+		Model string `json:"model"`
+		Tag string `json:"tag"`
+	}
+}
+
+func (hp *HealthPlanet) getInnerscan(accessToken string) (*Status, error) {
+	innerscanUrl := "https://www.healthplanet.jp/status/innerscan.json"
+
+	postBody := url.Values{}
+	postBody.Set("access_token", accessToken)
+	postBody.Set("date", "0")
+	postBody.Set("from", "20240501000000")
+	postBody.Set("to", "20240510000000")
+
+	resp, err := hp.Session.PostForm(innerscanUrl, postBody)
+	if err != nil {
+		return nil, err
+	}
+
+	defer resp.Body.Close()
+
+	byteArray, _ := io.ReadAll(resp.Body)
+	jsonBytes := []byte(byteArray)
+	status := new(Status)
+
+	if err := json.Unmarshal(jsonBytes, status); err != nil {
+		return nil, err
+	}
+
+	return status, nil
+}
+
 func (hp *HealthPlanet) Run() {
 	oauthToken, err := hp.getOauthToken()
 	if err != nil {
@@ -175,5 +212,11 @@ func (hp *HealthPlanet) Run() {
 	}
 
 	accessToken, err := hp.getAccessToken(authCode)
-	fmt.Println(accessToken)
+
+	status, err := hp.getInnerscan(accessToken)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println(status)
 }
