@@ -13,11 +13,7 @@ import (
 )
 
 type HealthPlanet struct {
-	LoginId        string
-	LoginPasssword string
-	ClientId       string
-	ClientSecret   string
-	Session        *http.Client
+	AccessToken string
 }
 
 func createClient() *http.Client {
@@ -29,23 +25,29 @@ func createClient() *http.Client {
 }
 
 func NewHealthPlanet(loginId, loginPassword, clientId, clientSecret string) *HealthPlanet {
-	return &HealthPlanet{
-		LoginId:        loginId,
-		LoginPasssword: loginPassword,
-		ClientId:       clientId,
-		ClientSecret:   clientSecret,
-		Session:        createClient(),
+	session := createClient()
+	oauthToken, err := getOauthToken(clientId, loginId, loginPassword, session)
+	if err != nil {
+		log.Fatal(err)
 	}
+
+	authCode, err := getAuthCode(oauthToken, session)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	accessToken, err := getAccessToken(authCode, clientId, clientSecret, session)
+	return &HealthPlanet{accessToken}
 }
 
-func (hp *HealthPlanet) getOauthToken() (string, error) {
+func getOauthToken(clientId string, loginId string, loginPassword string, session *http.Client) (string, error) {
 	authUrl := "https://www.healthplanet.jp/oauth/auth.do"
 	redirectUrl := "https://www.healthplanet.jp/success.html"
 
 	authQuery := url.Values{}
 	authQuery.Set("redirect_uri", redirectUrl)
 	authQuery.Set("response_type", "code")
-	authQuery.Set("client_id", hp.ClientId)
+	authQuery.Set("client_id", clientId)
 	authQuery.Set("scope", "innerscan")
 
 	authUrlParsed, err := url.Parse(authUrl)
@@ -54,15 +56,15 @@ func (hp *HealthPlanet) getOauthToken() (string, error) {
 	loginUrl := "https://www.healthplanet.jp/login_oauth.do"
 
 	loginQuery := url.Values{}
-	loginQuery.Set("loginId", hp.LoginId)
-	loginQuery.Set("passwd", hp.LoginPasssword)
+	loginQuery.Set("loginId", loginId)
+	loginQuery.Set("passwd", loginPassword)
 	loginQuery.Set("send", "1")
 	loginQuery.Set("url", authUrlParsed.String())
 
 	loginUrlParsed, err := url.Parse(loginUrl)
 	loginUrlParsed.RawQuery = loginQuery.Encode()
 
-	resp, err := hp.Session.PostForm(loginUrlParsed.String(), nil)
+	resp, err := session.PostForm(loginUrlParsed.String(), nil)
 	if err != nil {
 		return "", err
 	}
@@ -105,7 +107,7 @@ func getOauthTokenFromHtmlDoc(body io.ReadCloser) (string, error) {
 	return oauthToken, nil
 }
 
-func (hp *HealthPlanet) getAuthCode(oauthToken string) (string, error) {
+func getAuthCode(oauthToken string, session *http.Client) (string, error) {
 	approvalUrl, err := url.Parse("https://www.healthplanet.jp/oauth/approval.do")
 	if err != nil {
 		return "", err
@@ -115,7 +117,7 @@ func (hp *HealthPlanet) getAuthCode(oauthToken string) (string, error) {
 	approvalQuery.Set("approval", "true")
 	approvalUrl.RawQuery = approvalQuery.Encode()
 
-	resp, err := hp.Session.PostForm(approvalUrl.String(), nil)
+	resp, err := session.PostForm(approvalUrl.String(), nil)
 	if err != nil {
 		return "", err
 	}
@@ -135,17 +137,17 @@ type AccessToken struct {
 	ExpiresIn    int    `json:"expires_in"`
 }
 
-func (hp *HealthPlanet) getAccessToken(authCode string) (string, error) {
+func getAccessToken(authCode string, clientId string, clientSecret string, session *http.Client) (string, error) {
 	accessTokenUrl := "https://www.healthplanet.jp/oauth/token"
 
 	accessTokenQuery := url.Values{}
-	accessTokenQuery.Set("client_id", hp.ClientId)
-	accessTokenQuery.Set("client_secret", hp.ClientSecret)
+	accessTokenQuery.Set("client_id", clientId)
+	accessTokenQuery.Set("client_secret", clientSecret)
 	accessTokenQuery.Set("code", authCode)
 	accessTokenQuery.Set("redirect_uri", "https://www.healthplanet.jp/success.html")
 	accessTokenQuery.Set("grant_type", "authorization_code")
 
-	resp, err := hp.Session.PostForm(accessTokenUrl, accessTokenQuery)
+	resp, err := session.PostForm(accessTokenUrl, accessTokenQuery)
 	if err != nil {
 		return "", err
 	}
@@ -165,24 +167,30 @@ func (hp *HealthPlanet) getAccessToken(authCode string) (string, error) {
 
 type Status struct {
 	BirthDate string `json:"birth_date"`
-	Data 	[]struct {
-		Date string `json:"date"`
+	Data      []struct {
+		Date    string `json:"date"`
 		KeyData string `json:"keydata"`
-		Model string `json:"model"`
-		Tag string `json:"tag"`
+		Model   string `json:"model"`
+		Tag     string `json:"tag"`
 	}
 }
 
-func (hp *HealthPlanet) getInnerscan(accessToken string) (*Status, error) {
+type GetStatusRequest struct {
+	DateMode    string
+	From        string
+	To          string
+}
+
+func (hp *HealthPlanet) GetInnerscan(request GetStatusRequest) (*Status, error) {
 	innerscanUrl := "https://www.healthplanet.jp/status/innerscan.json"
 
 	postBody := url.Values{}
-	postBody.Set("access_token", accessToken)
-	postBody.Set("date", "0")
-	postBody.Set("from", "20240501000000")
-	postBody.Set("to", "20240510000000")
+	postBody.Set("access_token", hp.AccessToken)
+	postBody.Set("date", request.DateMode)
+	postBody.Set("from", request.From)
+	postBody.Set("to", request.To)
 
-	resp, err := hp.Session.PostForm(innerscanUrl, postBody)
+	resp, err := http.PostForm(innerscanUrl, postBody)
 	if err != nil {
 		return nil, err
 	}
@@ -198,25 +206,4 @@ func (hp *HealthPlanet) getInnerscan(accessToken string) (*Status, error) {
 	}
 
 	return status, nil
-}
-
-func (hp *HealthPlanet) Run() {
-	oauthToken, err := hp.getOauthToken()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	authCode, err := hp.getAuthCode(oauthToken)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	accessToken, err := hp.getAccessToken(authCode)
-
-	status, err := hp.getInnerscan(accessToken)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	fmt.Println(status)
 }
