@@ -15,7 +15,7 @@ func main() {
 	clientSecret := os.Getenv("HEALTHPLANET_CLIENT_SECRET")
 
 
-	hp := healthplanet.NewHealthPlanet(
+	hp := healthplanet.NewClient(
 		loginId,
 		loginPassword,
 		clientId,

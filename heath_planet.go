@@ -21,20 +21,16 @@ var (
 	innerscanUrl   = "https://www.healthplanet.jp/status/innerscan.json"
 )
 
-type HealthPlanet struct {
+type Client struct {
+	HTTPClient *http.Client
 	accessToken string
 }
 
-func createClient() *http.Client {
+func NewClient(loginId string, loginPassword string, clientId string, clientSecret string) *Client {
 	jar, _ := cookiejar.New(nil)
-	client := &http.Client{
+	session := &http.Client{
 		Jar: jar,
 	}
-	return client
-}
-
-func NewHealthPlanet(loginId string, loginPassword string, clientId string, clientSecret string) *HealthPlanet {
-	session := createClient()
 	oauthToken, err := getOauthToken(clientId, loginId, loginPassword, session)
 	if err != nil {
 		log.Fatal(err)
@@ -49,7 +45,10 @@ func NewHealthPlanet(loginId string, loginPassword string, clientId string, clie
 	if err != nil {
 		log.Fatal(err)
 	}
-	return &HealthPlanet{accessToken: accessToken}
+	return &Client{
+		accessToken: accessToken,
+		HTTPClient: http.DefaultClient,
+	}
 }
 
 func getOauthToken(clientId string, loginId string, loginPassword string, session *http.Client) (string, error) {
@@ -186,14 +185,34 @@ type GetStatusRequest struct {
 	To       string
 }
 
-func (hp *HealthPlanet) GetInnerscan(request GetStatusRequest) (*Status, error) {
-	postBody := url.Values{}
-	postBody.Set("access_token", hp.accessToken)
-	postBody.Set("date", request.DateMode)
-	postBody.Set("from", request.From)
-	postBody.Set("to", request.To)
+func (c *Client) prepRequest(url string) (*http.Request, error) {
+	req, err := http.NewRequest("POST", url, nil)
+	if err != nil {
+		return nil, err
+	}
 
-	resp, err := http.PostForm(innerscanUrl, postBody)
+	q := req.URL.Query()
+	q.Set("access_token", c.accessToken)
+	req.URL.RawQuery = q.Encode()
+
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	return req, err
+}
+
+func (c *Client) GetInnerscan(r GetStatusRequest) (*Status, error) {
+	req, err := c.prepRequest(innerscanUrl)
+	if err != nil {
+		return nil, err
+	}
+
+	q := req.URL.Query()
+	q.Add("date_mode", r.DateMode)
+	q.Add("from", r.From)
+	q.Add("to", r.To)
+	req.URL.RawQuery = q.Encode()
+
+	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
