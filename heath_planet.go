@@ -219,13 +219,15 @@ func (c *Client) GetInnerscan(r GetStatusRequest) (*Status, error) {
 
 	defer resp.Body.Close()
 
-	byteArray, _ := io.ReadAll(resp.Body)
-	jsonBytes := []byte(byteArray)
-	status := new(Status)
-
-	if err := json.Unmarshal(jsonBytes, status); err != nil {
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
 		return nil, err
 	}
 
-	return status, nil
+	var result Status
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, err
+	}
+
+	return &result, nil
 }
