@@ -1,4 +1,4 @@
-module github.com/kefi550/health-planet-monitoring
+module github.com/kefi550/healthplanet
 
 go 1.19
 

@@ -5,7 +5,7 @@ import (
 	"log"
 	"os"
 
-	healthplanet "github.com/kefi550/health-planet-monitoring"
+	"github.com/kefi550/healthplanet"
 )
 
 func main() {
