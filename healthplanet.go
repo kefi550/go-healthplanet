@@ -22,7 +22,7 @@ var (
 )
 
 type Client struct {
-	HTTPClient *http.Client
+	HTTPClient  *http.Client
 	accessToken string
 }
 
@@ -47,7 +47,7 @@ func NewClient(loginId string, loginPassword string, clientId string, clientSecr
 	}
 	return &Client{
 		accessToken: accessToken,
-		HTTPClient: http.DefaultClient,
+		HTTPClient:  http.DefaultClient,
 	}
 }
 
@@ -179,12 +179,6 @@ type Status struct {
 	}
 }
 
-type GetStatusRequest struct {
-	DateMode string
-	From     string
-	To       string
-}
-
 func (c *Client) prepRequest(url string) (*http.Request, error) {
 	req, err := http.NewRequest("POST", url, nil)
 	if err != nil {
@@ -200,6 +194,20 @@ func (c *Client) prepRequest(url string) (*http.Request, error) {
 	return req, err
 }
 
+type InnerscanTagEnum int
+
+const (
+	Weight InnerscanTagEnum = 6021 + iota
+	BodyFatPercentage
+)
+
+type GetStatusRequest struct {
+	DateMode string
+	From     string
+	To       string
+	Tag      InnerscanTagEnum
+}
+
 func (c *Client) GetInnerscan(r GetStatusRequest) (*Status, error) {
 	req, err := c.prepRequest(innerscanUrl)
 	if err != nil {
@@ -210,6 +218,7 @@ func (c *Client) GetInnerscan(r GetStatusRequest) (*Status, error) {
 	q.Add("date_mode", r.DateMode)
 	q.Add("from", r.From)
 	q.Add("to", r.To)
+	q.Add("tag", fmt.Sprintf("%d", r.Tag))
 	req.URL.RawQuery = q.Encode()
 
 	resp, err := c.HTTPClient.Do(req)
