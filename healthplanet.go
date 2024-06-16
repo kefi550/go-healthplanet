@@ -28,9 +28,14 @@ const (
 )
 
 var tagMap = map[int64]string{
-	Weight:   "Weight",
-	BodyFat:  "BodyFat",
+	Weight:  "Weight",
+	BodyFat: "BodyFat",
 }
+
+const (
+	DateMode_RegisteredDate = "0"
+	DateMode_MeasuredDate   = "1"
+)
 
 type Client struct {
 	HTTPClient  *http.Client
