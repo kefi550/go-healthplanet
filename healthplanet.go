@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"strconv"
 
 	"github.com/PuerkitoBio/goquery"
 )
@@ -20,6 +21,16 @@ var (
 	accessTokenUrl = "https://www.healthplanet.jp/oauth/token"
 	innerscanUrl   = "https://www.healthplanet.jp/status/innerscan.json"
 )
+
+const (
+	Weight = 6021 + iota
+	BodyFat
+)
+
+var tagMap = map[int64]string{
+	Weight:   "Weight",
+	BodyFat:  "BodyFat",
+}
 
 type Client struct {
 	HTTPClient  *http.Client
@@ -194,18 +205,11 @@ func (c *Client) prepRequest(url string) (*http.Request, error) {
 	return req, err
 }
 
-type InnerscanTagEnum int
-
-const (
-	Weight InnerscanTagEnum = 6021 + iota
-	BodyFatPercentage
-)
-
 type GetStatusRequest struct {
 	DateMode string
 	From     string
 	To       string
-	Tag      InnerscanTagEnum
+	Tag      int
 }
 
 func (c *Client) GetInnerscan(r GetStatusRequest) (*Status, error) {
@@ -239,4 +243,16 @@ func (c *Client) GetInnerscan(r GetStatusRequest) (*Status, error) {
 	}
 
 	return &result, nil
+}
+
+func (c *Client) GetTagValue(tagKey string) (string, error) {
+	tagKeyInt, err := strconv.ParseInt(tagKey, 10, 64)
+	if err != nil {
+		return "", err
+	}
+	value := tagMap[tagKeyInt]
+	if value == "" {
+		return "", fmt.Errorf("Failed to get tag value")
+	}
+	return value, nil
 }
