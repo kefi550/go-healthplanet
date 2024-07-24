@@ -30,11 +30,25 @@ func main() {
 		clientId,
 		clientSecret,
 	)
+
+	jst, err := time.LoadLocation("Asia/Tokyo")
+	if err != nil {
+		log.Fatal(err)
+	}
+	// 環境変数 STATUS_TO_DATETIME が設定されている場合はその値をtoとし、設定されていない場合は現在時刻をto, 1ヶ月前をfromとする
+	now := time.Now()
+	now = now.In(jst)
+	to := os.Getenv("STATUS_TO_DATETIME")
+	if to == "" {
+		to = now.Format("20060102150405")
+	}
+	parsedTo, err := time.ParseInLocation("20060102150405", to, jst)
+	from := parsedTo.AddDate(-1, 0, 0).Format("20060102150405")
+
 	getInnerScanRequest := healthplanet.GetStatusRequest{
 		DateMode:    healthplanet.DateMode_MeasuredDate,
-		From:        "20210501000000",
-		To:          "20240616000000",
-		//Tag:         healthplanet.Weight,
+		From:        from,
+		To:          to,
 	}
 	status, err := hp.GetInnerscan(getInnerScanRequest)
 	if err != nil {
@@ -49,7 +63,7 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		parsedTime, _ := time.Parse("200601021504", data.Date)
+		parsedTime, _ := time.ParseInLocation("200601021504", data.Date, jst)
 		value, _ := strconv.ParseFloat(data.KeyData, 64)
 		err = healthplanet.WriteInfluxDB(influxdbUrl, influxdbToken, influxdbOrg, influxdbBucket, influxdbMeasurement, tag, value, parsedTime)
 		if err != nil {
