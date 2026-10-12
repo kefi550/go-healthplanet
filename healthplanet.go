@@ -77,7 +77,13 @@ func getOauthToken(clientId string, loginId string, loginPassword string, sessio
 	authUrlParsed, err := url.Parse(authUrl)
 	authUrlParsed.RawQuery = authQuery.Encode()
 
+	strutsToken, err := getStrutsToken(authUrlParsed.String(), session)
+	if err != nil {
+		return "", err
+	}
+
 	loginQuery := url.Values{}
+	loginQuery.Set(strutsTokenName, strutsToken)
 	loginQuery.Set("loginId", loginId)
 	loginQuery.Set("passwd", loginPassword)
 	loginQuery.Set("send", "1")
@@ -110,6 +116,27 @@ func getOauthToken(clientId string, loginId string, loginPassword string, sessio
 	}
 
 	return oauthToken, nil
+}
+
+const strutsTokenName = "org.apache.struts.taglib.html.TOKEN"
+
+func getStrutsToken(loginPageUrl string, session *http.Client) (string, error) {
+	resp, err := session.Get(loginPageUrl)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	doc, err := goquery.NewDocumentFromReader(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	strutsToken, _ := doc.Find(fmt.Sprintf("input[name='%s']", strutsTokenName)).First().Attr("value")
+	if strutsToken == "" {
+		return "", fmt.Errorf("Failed to get struts token")
+	}
+	return strutsToken, nil
 }
 
 func getOauthTokenFromHtmlDoc(body io.ReadCloser) (string, error) {

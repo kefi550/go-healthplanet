@@ -6,7 +6,6 @@ import (
 	"os"
 	"testing"
 	"github.com/joho/godotenv"
-	"fmt"
 )
 
 type testEnv struct {
